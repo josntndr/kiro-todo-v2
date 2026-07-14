@@ -44,6 +44,14 @@ function LoginPage() {
         return 'Network error. Check your internet connection.';
       case 'auth/popup-closed-by-user':
         return '';
+      case 'auth/unauthorized-domain':
+        return 'This domain is not authorized. Please contact support.';
+      case 'auth/popup-blocked':
+        return 'Popup was blocked by your browser. Please allow popups and try again.';
+      case 'auth/cancelled-popup-request':
+        return '';
+      case 'auth/internal-error':
+        return 'An internal error occurred. Please try again.';
       default:
         return 'Unable to sign in. Please try again.';
     }

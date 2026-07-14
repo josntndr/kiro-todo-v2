@@ -3,6 +3,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   signOut,
   sendPasswordResetEmail,
@@ -37,7 +39,16 @@ export function AuthProvider({ children }) {
 
   async function loginWithGoogle(rememberMe = true) {
     await setPersistence(auth, browserLocalPersistence);
-    return signInWithPopup(auth, googleProvider);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      return result;
+    } catch (error) {
+      // If popup is blocked or fails, try redirect method
+      if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
+        return signInWithRedirect(auth, googleProvider);
+      }
+      throw error;
+    }
   }
 
   function logout() {
@@ -109,6 +120,13 @@ export function AuthProvider({ children }) {
   }, [currentUser]);
 
   useEffect(() => {
+    // Handle redirect result (for when popup is blocked)
+    getRedirectResult(auth).catch((error) => {
+      if (error && error.code !== 'auth/popup-closed-by-user') {
+        console.error('Redirect sign-in error:', error);
+      }
+    });
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       if (!user) {
