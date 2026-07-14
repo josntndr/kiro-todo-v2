@@ -86,9 +86,8 @@ export function useOnboarding() {
           ...data,
         });
       } catch (error) {
-        if (mountedRef.current) {
-          setSaveError('Could not save progress. Your data is preserved locally.');
-        }
+        // Don't block the user — just log it. Data is preserved locally.
+        console.warn('Could not save onboarding progress:', error);
       } finally {
         if (mountedRef.current) {
           setSaving(false);

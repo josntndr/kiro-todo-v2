@@ -3,8 +3,6 @@ import {
   getDoc,
   setDoc,
   serverTimestamp,
-  writeBatch,
-  collection,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -80,76 +78,49 @@ export async function updateOnboardingStep(uid, stepData) {
 
 // --- Workspace Provisioning ---
 
-const DEFAULT_WORKSPACE_ID_PREFIX = 'ws_';
-
-function generateWorkspaceId(uid) {
-  return `${DEFAULT_WORKSPACE_ID_PREFIX}${uid}`;
-}
-
 export async function provisionWorkspace(uid, onboardingData) {
-  const workspaceId = generateWorkspaceId(uid);
-  const batch = writeBatch(db);
-
-  // Check if workspace already exists (idempotent)
-  const workspaceRef = doc(db, 'users', uid, 'workspaces', workspaceId);
-  const existingWorkspace = await getDoc(workspaceRef);
-  if (existingWorkspace.exists()) {
-    // Already provisioned — just mark onboarding complete
+  try {
+    // Mark onboarding as completed in profile
     const profileRef = doc(db, 'users', uid);
-    batch.set(
+    await setDoc(
       profileRef,
       {
         onboardingCompleted: true,
         onboardingCompletedAt: serverTimestamp(),
+        onboardingStep: 6,
+        workspaceName: onboardingData.workspaceName || 'My Workspace',
+        useCase: onboardingData.useCase,
+        managementArea: onboardingData.managementArea,
+        selectedFeatures: onboardingData.selectedFeatures || [],
+        invitedEmails: onboardingData.invitedEmails || [],
         updatedAt: serverTimestamp(),
       },
       { merge: true }
     );
-    await batch.commit();
-    return { workspaceId, alreadyExisted: true };
+
+    // Try to create sample tasks if user has none yet
+    try {
+      const tasksRef = doc(db, 'users', uid, 'data', 'tasks');
+      const existingTasks = await getDoc(tasksRef);
+      const currentItems = existingTasks.exists() ? existingTasks.data().items || [] : [];
+
+      if (currentItems.length === 0) {
+        const sampleTasks = createSampleTasks(onboardingData);
+        await setDoc(tasksRef, {
+          items: sampleTasks,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    } catch (taskError) {
+      // Non-critical — user can create tasks manually
+      console.warn('Could not create sample tasks:', taskError);
+    }
+
+    return { workspaceId: `ws_${uid}`, alreadyExisted: false };
+  } catch (error) {
+    console.error('Error provisioning workspace:', error);
+    throw error;
   }
-
-  // Create workspace document
-  batch.set(workspaceRef, {
-    ownerId: uid,
-    name: onboardingData.workspaceName,
-    useCase: onboardingData.useCase,
-    managementArea: onboardingData.managementArea,
-    enabledFeatures: onboardingData.selectedFeatures,
-    members: [uid],
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-
-  // Create sample tasks in existing tasks document
-  const sampleTasks = createSampleTasks(onboardingData);
-  const tasksRef = doc(db, 'users', uid, 'data', 'tasks');
-  const existingTasks = await getDoc(tasksRef);
-  const currentItems = existingTasks.exists() ? existingTasks.data().items || [] : [];
-
-  // Only add sample tasks if user has no tasks yet
-  if (currentItems.length === 0) {
-    batch.set(tasksRef, {
-      items: sampleTasks,
-      updatedAt: new Date().toISOString(),
-    });
-  }
-
-  // Mark onboarding as completed in profile
-  const profileRef = doc(db, 'users', uid);
-  batch.set(
-    profileRef,
-    {
-      onboardingCompleted: true,
-      onboardingCompletedAt: serverTimestamp(),
-      onboardingStep: 6,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
-
-  await batch.commit();
-  return { workspaceId, alreadyExisted: false };
 }
 
 function createSampleTasks(onboardingData) {
