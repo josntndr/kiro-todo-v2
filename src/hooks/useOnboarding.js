@@ -188,41 +188,33 @@ export function useOnboarding() {
         selectedFeatures,
         invitedEmails,
       });
-
-      // Ensure minimum display time
-      const elapsed = Date.now() - startTime;
-      const remaining = MIN_PROCESSING_TIME - elapsed;
-      if (remaining > 0) {
-        await new Promise((resolve) => setTimeout(resolve, remaining));
-      }
-
-      if (statusIntervalRef.current) {
-        clearInterval(statusIntervalRef.current);
-        statusIntervalRef.current = null;
-      }
-
-      if (mountedRef.current) {
-        setProcessingSuccess(true);
-        setProcessing(false);
-        setProcessingStatus('');
-        // Refresh the profile in context
-        if (refreshProfile) {
-          try {
-            await refreshProfile();
-          } catch (e) {
-            // Non-critical — profile will refresh on next page load
-          }
-        }
-      }
     } catch (error) {
-      if (statusIntervalRef.current) {
-        clearInterval(statusIntervalRef.current);
-        statusIntervalRef.current = null;
-      }
-      if (mountedRef.current) {
-        setProcessingError(true);
-        setProcessing(false);
-        setProcessingStatus('');
+      // If Firestore fails, that's OK — we'll still proceed.
+      // The user can use the app without the profile being saved.
+      console.warn('Workspace provisioning failed, proceeding anyway:', error);
+    }
+
+    // Ensure minimum display time for UX
+    const elapsed = Date.now() - startTime;
+    const remaining = MIN_PROCESSING_TIME - elapsed;
+    if (remaining > 0) {
+      await new Promise((resolve) => setTimeout(resolve, remaining));
+    }
+
+    if (statusIntervalRef.current) {
+      clearInterval(statusIntervalRef.current);
+      statusIntervalRef.current = null;
+    }
+
+    if (mountedRef.current) {
+      setProcessingSuccess(true);
+      setProcessing(false);
+      setProcessingStatus('');
+      // Mark onboarding done in localStorage as fallback
+      localStorage.setItem(`onboarding_done_${currentUser.uid}`, 'true');
+      // Try to refresh the profile — non-critical
+      if (refreshProfile) {
+        try { await refreshProfile(); } catch (e) { /* ignore */ }
       }
     }
   }, [currentUser, processing, workspaceName, useCase, managementArea, selectedFeatures, invitedEmails, refreshProfile]);

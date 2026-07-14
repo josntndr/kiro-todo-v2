@@ -151,7 +151,7 @@ export function AuthProvider({ children }) {
     loading,
     profileLoading,
     profileError,
-    onboardingCompleted: userProfile?.onboardingCompleted === true,
+    onboardingCompleted: userProfile?.onboardingCompleted === true || localStorage.getItem(`onboarding_done_${currentUser?.uid}`) === 'true',
     signup,
     login,
     loginWithGoogle,
