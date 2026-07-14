@@ -43,9 +43,15 @@ export function AuthProvider({ children }) {
       const result = await signInWithPopup(auth, googleProvider);
       return result;
     } catch (error) {
-      // If popup is blocked or fails, try redirect method
-      if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
-        return signInWithRedirect(auth, googleProvider);
+      // If popup fails for any reason, try redirect
+      if (
+        error.code === 'auth/popup-blocked' ||
+        error.code === 'auth/popup-closed-by-user' ||
+        error.code === 'auth/cancelled-popup-request' ||
+        error.code === 'auth/unauthorized-domain'
+      ) {
+        await signInWithRedirect(auth, googleProvider);
+        return null;
       }
       throw error;
     }

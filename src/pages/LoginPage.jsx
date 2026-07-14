@@ -106,8 +106,9 @@ function LoginPage() {
       await loginWithGoogle();
       navigate('/tasks');
     } catch (err) {
+      console.error('Google sign-in error:', err.code, err.message);
       const msg = getErrorMessage(err.code);
-      if (msg) setError(msg);
+      setError(msg || `Error: ${err.code || err.message}`);
     } finally {
       setGoogleLoading(false);
     }
