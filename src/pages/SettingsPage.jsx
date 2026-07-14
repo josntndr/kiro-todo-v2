@@ -1,4 +1,4 @@
-import { Sun, Moon, Keyboard } from 'lucide-react';
+import { Sun, Moon, Keyboard, Monitor } from 'lucide-react';
 import DataManager from '../components/DataManager';
 
 const SHORTCUTS = [
@@ -12,53 +12,176 @@ const SHORTCUTS = [
 
 function SettingsPage({ theme, onToggleTheme, tasks, onImport, showToast }) {
   return (
-    <div className="page settings-page">
-      <div className="page-header">
-        <h1 className="page-title">Settings</h1>
-        <p className="page-subtitle">Customize your TaskFlow experience</p>
+    <div className="page settings-page" style={{ padding: '24px 20px' }}>
+      {/* Header */}
+      <div style={{ marginBottom: '28px' }}>
+        <h1 style={{
+          fontSize: '2.25rem',
+          fontWeight: 700,
+          color: 'var(--color-text)',
+          margin: 0,
+        }}>
+          Settings
+        </h1>
+        <p style={{
+          fontSize: '0.9rem',
+          color: 'var(--color-text-muted)',
+          margin: '4px 0 0',
+        }}>
+          Customize your TaskFlow experience
+        </p>
       </div>
 
-      <div className="settings-sections">
-        {/* Theme Section */}
-        <section className="settings-section">
-          <h2 className="settings-section-title">Appearance</h2>
-          <div className="settings-option">
-            <div className="settings-option-info">
-              <h3>Theme</h3>
-              <p>Switch between light and dark mode</p>
+      {/* Sections */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {/* Appearance Section */}
+        <section style={{
+          background: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          borderRadius: '16px',
+          padding: '20px',
+        }}>
+          <h2 style={{
+            fontSize: '0.9rem',
+            fontWeight: 600,
+            color: 'var(--color-text)',
+            margin: '0 0 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}>
+            <Monitor size={16} style={{ color: 'var(--color-text-muted)' }} />
+            Appearance
+          </h2>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <div>
+              <h3 style={{
+                fontSize: '0.85rem',
+                fontWeight: 500,
+                color: 'var(--color-text)',
+                margin: '0 0 4px',
+              }}>
+                Theme
+              </h3>
+              <p style={{
+                fontSize: '0.8rem',
+                color: 'var(--color-text-muted)',
+                margin: 0,
+              }}>
+                Switch between light and dark mode
+              </p>
             </div>
             <button
               type="button"
-              className="btn btn-secondary settings-theme-btn"
               onClick={onToggleTheme}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 16px',
+                borderRadius: '12px',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-input)',
+                color: 'var(--color-text)',
+                fontSize: '0.8rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
             >
-              {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+              {theme === 'light' ? <Moon size={16} /> : <Sun size={16} style={{ color: '#f59e0b' }} />}
               {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
             </button>
           </div>
         </section>
 
         {/* Data Management Section */}
-        <section className="settings-section">
-          <h2 className="settings-section-title">Data Management</h2>
+        <section style={{
+          background: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          borderRadius: '16px',
+          padding: '20px',
+        }}>
+          <h2 style={{
+            fontSize: '0.9rem',
+            fontWeight: 600,
+            color: 'var(--color-text)',
+            margin: '0 0 16px',
+          }}>
+            Data Management
+          </h2>
           <DataManager tasks={tasks} onImport={onImport} onToast={showToast} />
         </section>
 
         {/* Keyboard Shortcuts Section */}
-        <section className="settings-section">
-          <h2 className="settings-section-title">
-            <Keyboard size={18} />
+        <section style={{
+          background: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          borderRadius: '16px',
+          padding: '20px',
+        }}>
+          <h2 style={{
+            fontSize: '0.9rem',
+            fontWeight: 600,
+            color: 'var(--color-text)',
+            margin: '0 0 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}>
+            <Keyboard size={16} style={{ color: 'var(--color-text-muted)' }} />
             Keyboard Shortcuts
           </h2>
-          <div className="settings-shortcuts-list">
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, 1fr)',
+            gap: '10px',
+          }}>
             {SHORTCUTS.map((shortcut) => (
-              <div key={shortcut.description} className="settings-shortcut-item">
-                <div className="shortcut-keys">
+              <div
+                key={shortcut.description}
+                style={{
+                  background: 'var(--color-input)',
+                  borderRadius: '12px',
+                  padding: '14px 16px',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <div style={{
+                  display: 'flex',
+                  gap: '6px',
+                  marginBottom: '8px',
+                  flexWrap: 'wrap',
+                }}>
                   {shortcut.keys.map((key) => (
-                    <kbd key={key} className="shortcut-key">{key}</kbd>
+                    <kbd
+                      key={key}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        background: 'var(--color-surface)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-text)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        fontFamily: 'monospace',
+                      }}
+                    >
+                      {key}
+                    </kbd>
                   ))}
                 </div>
-                <span className="shortcut-description">{shortcut.description}</span>
+                <span style={{
+                  fontSize: '0.78rem',
+                  color: 'var(--color-text-muted)',
+                  lineHeight: 1.3,
+                }}>
+                  {shortcut.description}
+                </span>
               </div>
             ))}
           </div>

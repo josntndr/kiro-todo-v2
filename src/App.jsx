@@ -1,14 +1,30 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { CheckCheck, Undo2 } from 'lucide-react';
+import { useAuth } from './contexts/AuthContext';
+import PrivateRoute from './components/PrivateRoute';
+import PublicRoute from './components/PublicRoute';
+import OnboardingRoute from './components/OnboardingRoute';
 import Sidebar from './components/Sidebar';
 import KeyboardShortcuts from './components/KeyboardShortcuts';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import OnboardingPage from './pages/OnboardingPage';
+import LandingPage from './pages/LandingPage';
 import TasksPage from './pages/TasksPage';
 import DashboardPage from './pages/DashboardPage';
 import PomodoroPage from './pages/PomodoroPage';
 import ActivityPage from './pages/ActivityPage';
 import ArchivePage from './pages/ArchivePage';
 import SettingsPage from './pages/SettingsPage';
+import CalendarPage from './pages/CalendarPage';
+import ReportsPage from './pages/ReportsPage';
+import {
+  getTasks as firestoreGetTasks,
+  saveTasks as firestoreSaveTasks,
+  getActivities as firestoreGetActivities,
+  saveActivities as firestoreSaveActivities,
+} from './services/firestoreService';
 import {
   generateId,
   filterTasks,
@@ -21,9 +37,10 @@ import {
   createActivityEntry,
 } from './utils/taskUtils';
 
-const STORAGE_KEY = 'tasks';
 const THEME_KEY = 'theme';
-const ACTIVITY_KEY = 'activity_log';
+const LOCAL_TASKS_KEY = 'tasks';
+const LOCAL_ACTIVITY_KEY = 'activity_log';
+const DEBOUNCE_DELAY = 1500;
 
 function getInitialTheme() {
   const stored = localStorage.getItem(THEME_KEY);
@@ -34,39 +51,12 @@ function getInitialTheme() {
   return 'light';
 }
 
-function loadTasks() {
-  try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (!data) return [];
-    const parsed = JSON.parse(data);
-    return migrateTasks(parsed);
-  } catch {
-    return [];
-  }
-}
-
-function loadActivities() {
-  try {
-    const data = localStorage.getItem(ACTIVITY_KEY);
-    if (!data) return [];
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
-}
-
-function saveTasks(tasks) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-}
-
-function saveActivities(activities) {
-  const trimmed = activities.slice(0, 100);
-  localStorage.setItem(ACTIVITY_KEY, JSON.stringify(trimmed));
-}
-
 function App() {
-  const [tasks, setTasks] = useState(loadTasks);
-  const [activities, setActivities] = useState(loadActivities);
+  const { currentUser } = useAuth();
+
+  const [tasks, setTasks] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [dataLoading, setDataLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [sortBy, setSortBy] = useState('manual');
@@ -78,16 +68,132 @@ function App() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [deletedTask, setDeletedTask] = useState(null);
   const undoTimerRef = useRef(null);
+  const tasksSaveTimer = useRef(null);
+  const activitiesSaveTimer = useRef(null);
+  const isInitialLoad = useRef(true);
 
-  // Persist tasks
+  // Load data from Firestore when user is available
   useEffect(() => {
-    saveTasks(tasks);
-  }, [tasks]);
+    if (!currentUser) {
+      setTasks([]);
+      setActivities([]);
+      setDataLoading(false);
+      return;
+    }
 
-  // Persist activities
+    let cancelled = false;
+
+    async function loadData() {
+      setDataLoading(true);
+      try {
+        const userId = currentUser.uid;
+        const migratedKey = `migrated_${userId}`;
+
+        // Load from Firestore
+        let loadedTasks = await firestoreGetTasks(userId);
+        let loadedActivities = await firestoreGetActivities(userId);
+
+        // Check for localStorage migration
+        if (!localStorage.getItem(migratedKey)) {
+          const localTasksRaw = localStorage.getItem(LOCAL_TASKS_KEY);
+          const localActivitiesRaw = localStorage.getItem(LOCAL_ACTIVITY_KEY);
+
+          if (localTasksRaw) {
+            try {
+              const localTasks = migrateTasks(JSON.parse(localTasksRaw));
+              if (localTasks.length > 0 && loadedTasks.length === 0) {
+                // Migrate local tasks to Firestore
+                await firestoreSaveTasks(userId, localTasks);
+                loadedTasks = localTasks;
+
+                if (localActivitiesRaw) {
+                  const localActivities = JSON.parse(localActivitiesRaw);
+                  if (localActivities.length > 0 && loadedActivities.length === 0) {
+                    await firestoreSaveActivities(userId, localActivities);
+                    loadedActivities = localActivities;
+                  }
+                }
+
+                // Show migration toast after state is set
+                setTimeout(() => {
+                  if (!cancelled) {
+                    setToast({
+                      message: 'Your existing tasks have been synced to the cloud!',
+                      type: 'success',
+                    });
+                  }
+                }, 500);
+              }
+            } catch (err) {
+              console.error('Migration error:', err);
+            }
+          }
+
+          // Mark migration as done regardless
+          localStorage.setItem(migratedKey, 'true');
+          // Clean up old localStorage keys
+          localStorage.removeItem(LOCAL_TASKS_KEY);
+          localStorage.removeItem(LOCAL_ACTIVITY_KEY);
+        }
+
+        if (!cancelled) {
+          setTasks(migrateTasks(loadedTasks));
+          setActivities(loadedActivities);
+          isInitialLoad.current = true;
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+        if (!cancelled) {
+          setToast({ message: 'Failed to load data. Please refresh.', type: 'error' });
+        }
+      } finally {
+        if (!cancelled) {
+          setDataLoading(false);
+        }
+      }
+    }
+
+    loadData();
+    return () => { cancelled = true; };
+  }, [currentUser]);
+
+  // Debounced save tasks to Firestore
   useEffect(() => {
-    saveActivities(activities);
-  }, [activities]);
+    if (!currentUser || dataLoading) return;
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      return;
+    }
+
+    if (tasksSaveTimer.current) clearTimeout(tasksSaveTimer.current);
+    tasksSaveTimer.current = setTimeout(() => {
+      firestoreSaveTasks(currentUser.uid, tasks).catch((err) => {
+        console.error('Error saving tasks:', err);
+        setToast({ message: 'Failed to save tasks. Changes may be lost.', type: 'error' });
+      });
+    }, DEBOUNCE_DELAY);
+
+    return () => {
+      if (tasksSaveTimer.current) clearTimeout(tasksSaveTimer.current);
+    };
+  }, [tasks, currentUser, dataLoading]);
+
+  // Debounced save activities to Firestore
+  useEffect(() => {
+    if (!currentUser || dataLoading) return;
+    if (isInitialLoad.current) return;
+
+    if (activitiesSaveTimer.current) clearTimeout(activitiesSaveTimer.current);
+    activitiesSaveTimer.current = setTimeout(() => {
+      firestoreSaveActivities(currentUser.uid, activities).catch((err) => {
+        console.error('Error saving activities:', err);
+      });
+    }, DEBOUNCE_DELAY);
+
+    return () => {
+      if (activitiesSaveTimer.current) clearTimeout(activitiesSaveTimer.current);
+    };
+  }, [activities, currentUser, dataLoading]);
 
   // Apply theme to document
   useEffect(() => {
@@ -386,7 +492,6 @@ function App() {
   // Clear activity log
   function handleClearActivities() {
     setActivities([]);
-    localStorage.removeItem(ACTIVITY_KEY);
     showToast('Activity history cleared.', 'info');
   }
 
@@ -405,102 +510,160 @@ function App() {
   }
 
   return (
-    <div className="app-layout">
-      {/* Toast with undo support */}
-      {toast && (
-        <div className={`toast toast-${toast.type}`} role="alert">
-          <CheckCheck size={16} />
-          <span className="toast-message">{toast.message}</span>
-          {toast.undoable && deletedTask && (
-            <button
-              type="button"
-              className="btn btn-undo"
-              onClick={handleUndo}
-            >
-              <Undo2 size={14} />
-              Undo
-            </button>
-          )}
-        </div>
-      )}
+    <Routes>
+      <Route
+        path="/"
+        element={
+          <PublicRoute>
+            <LandingPage />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <LoginPage />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <PublicRoute>
+            <RegisterPage />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/onboarding"
+        element={
+          <OnboardingRoute>
+            <OnboardingPage />
+          </OnboardingRoute>
+        }
+      />
+      <Route
+        path="/*"
+        element={
+          <PrivateRoute>
+            <div className="app-layout">
+              {/* Toast with undo support */}
+              {toast && (
+                <div className={`toast toast-${toast.type}`} role="alert">
+                  <CheckCheck size={16} />
+                  <span className="toast-message">{toast.message}</span>
+                  {toast.undoable && deletedTask && (
+                    <button
+                      type="button"
+                      className="btn btn-undo"
+                      onClick={handleUndo}
+                    >
+                      <Undo2 size={14} />
+                      Undo
+                    </button>
+                  )}
+                </div>
+              )}
 
-      <Sidebar archivedCount={archivedTasks.length} />
+              <Sidebar archivedCount={archivedTasks.length} />
 
-      <main className="page-content">
-        <Routes>
-          <Route path="/" element={<Navigate to="/tasks" replace />} />
-          <Route
-            path="/tasks"
-            element={
-              <TasksPage
-                displayedTasks={displayedTasks}
-                editingTask={editingTask}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-                filter={filter}
-                onFilterChange={setFilter}
-                sortBy={sortBy}
-                onSortChange={setSortBy}
-                allTags={allTags}
-                selectedTag={selectedTag}
-                onTagChange={setSelectedTag}
-                view={view}
-                onViewChange={setView}
-                onAddOrUpdate={handleAddOrUpdate}
-                onCancelEdit={handleCancelEdit}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onToggleComplete={handleToggleComplete}
-                onToggleSubtask={handleToggleSubtask}
-                onAddSubtask={handleAddSubtask}
-                onRemoveSubtask={handleRemoveSubtask}
-                onReorder={handleReorder}
-                onMoveTask={handleMoveTask}
-                onArchive={handleArchive}
-              />
-            }
-          />
-          <Route
-            path="/dashboard"
-            element={<DashboardPage tasks={activeTasks} />}
-          />
-          <Route path="/pomodoro" element={<PomodoroPage />} />
-          <Route
-            path="/activity"
-            element={
-              <ActivityPage
-                activities={activities}
-                onClearActivities={handleClearActivities}
-              />
-            }
-          />
-          <Route
-            path="/archive"
-            element={
-              <ArchivePage
-                archivedTasks={archivedTasks}
-                onUnarchive={handleUnarchive}
-                onDelete={handleDelete}
-              />
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <SettingsPage
-                theme={theme}
-                onToggleTheme={toggleTheme}
-                tasks={tasks}
-                onImport={handleImport}
-                showToast={showToast}
-              />
-            }
-          />
-        </Routes>
-      </main>
+              <main className="page-content">
+                {dataLoading ? (
+                  <div className="data-loading">
+                    <div className="auth-spinner" />
+                    <p>Loading your tasks...</p>
+                  </div>
+                ) : (
+                  <Routes>
+                    <Route path="/" element={<Navigate to="/tasks" replace />} />
+                    <Route
+                      path="/tasks"
+                      element={
+                        <TasksPage
+                          tasks={activeTasks}
+                          displayedTasks={displayedTasks}
+                          editingTask={editingTask}
+                          searchQuery={searchQuery}
+                          onSearchChange={setSearchQuery}
+                          filter={filter}
+                          onFilterChange={setFilter}
+                          sortBy={sortBy}
+                          onSortChange={setSortBy}
+                          allTags={allTags}
+                          selectedTag={selectedTag}
+                          onTagChange={setSelectedTag}
+                          view={view}
+                          onViewChange={setView}
+                          onAddOrUpdate={handleAddOrUpdate}
+                          onCancelEdit={handleCancelEdit}
+                          onEdit={handleEdit}
+                          onDelete={handleDelete}
+                          onToggleComplete={handleToggleComplete}
+                          onToggleSubtask={handleToggleSubtask}
+                          onAddSubtask={handleAddSubtask}
+                          onRemoveSubtask={handleRemoveSubtask}
+                          onReorder={handleReorder}
+                          onMoveTask={handleMoveTask}
+                          onArchive={handleArchive}
+                        />
+                      }
+                    />
+                    <Route
+                      path="/dashboard"
+                      element={<Navigate to="/tasks" replace />}
+                    />
+                    <Route path="/pomodoro" element={<PomodoroPage />} />
+                    <Route
+                      path="/calendar"
+                      element={<CalendarPage tasks={activeTasks} />}
+                    />
+                    <Route
+                      path="/reports"
+                      element={<ReportsPage tasks={activeTasks} />}
+                    />
+                    <Route
+                      path="/activity"
+                      element={
+                        <ActivityPage
+                          activities={activities}
+                          onClearActivities={handleClearActivities}
+                        />
+                      }
+                    />
+                    <Route
+                      path="/archive"
+                      element={
+                        <ArchivePage
+                          archivedTasks={archivedTasks}
+                          onUnarchive={handleUnarchive}
+                          onDelete={handleDelete}
+                        />
+                      }
+                    />
+                    <Route
+                      path="/settings"
+                      element={
+                        <SettingsPage
+                          theme={theme}
+                          onToggleTheme={toggleTheme}
+                          tasks={tasks}
+                          onImport={handleImport}
+                          showToast={showToast}
+                        />
+                      }
+                    />
+                    <Route path="*" element={<Navigate to="/tasks" replace />} />
+                  </Routes>
+                )}
+              </main>
 
-      <KeyboardShortcuts isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
-    </div>
+              <KeyboardShortcuts isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
+            </div>
+          </PrivateRoute>
+        }
+      />
+    </Routes>
   );
 }
 

@@ -15,6 +15,7 @@ function TaskForm({ onSubmit, editingTask, onCancelEdit }) {
   const [tags, setTags] = useState([]);
   const [newTag, setNewTag] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (editingTask) {
@@ -49,11 +50,14 @@ function TaskForm({ onSubmit, editingTask, onCancelEdit }) {
   function handleSubmit(e) {
     e.preventDefault();
 
+    if (isSubmitting) return;
+
     if (!title.trim()) {
       setError('Task title is required.');
       return;
     }
 
+    setIsSubmitting(true);
     onSubmit({
       title: title.trim(),
       description: description.trim(),
@@ -67,6 +71,7 @@ function TaskForm({ onSubmit, editingTask, onCancelEdit }) {
     });
 
     resetForm();
+    setIsSubmitting(false);
   }
 
   function handleCancel() {
@@ -142,7 +147,7 @@ function TaskForm({ onSubmit, editingTask, onCancelEdit }) {
 
       <div className="form-row form-row-multi">
         <div className="form-group">
-          <label htmlFor="task-due-date">Due Date</label>
+          <label htmlFor="task-due-date">Due date</label>
           <input
             id="task-due-date"
             type="date"
@@ -163,7 +168,9 @@ function TaskForm({ onSubmit, editingTask, onCancelEdit }) {
             <option value="High">High</option>
           </select>
         </div>
+      </div>
 
+      <div className="form-row form-row-multi">
         <div className="form-group">
           <label htmlFor="task-status">Status</label>
           <select
@@ -176,9 +183,7 @@ function TaskForm({ onSubmit, editingTask, onCancelEdit }) {
             <option value="done">Done</option>
           </select>
         </div>
-      </div>
 
-      <div className="form-row form-row-multi">
         <div className="form-group">
           <label htmlFor="task-category">Category</label>
           <input
@@ -189,7 +194,9 @@ function TaskForm({ onSubmit, editingTask, onCancelEdit }) {
             onChange={(e) => setCategory(e.target.value)}
           />
         </div>
+      </div>
 
+      <div className="form-row form-row-multi">
         <div className="form-group">
           <label htmlFor="task-recurrence">Recurrence</label>
           <select
@@ -298,7 +305,7 @@ function TaskForm({ onSubmit, editingTask, onCancelEdit }) {
       </div>
 
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary">
+        <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
           {editingTask ? <Save size={16} /> : <Plus size={16} />}
           {editingTask ? 'Update Task' : 'Add Task'}
         </button>

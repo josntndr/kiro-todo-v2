@@ -2,8 +2,9 @@ import { CheckCircle2, Clock, AlertTriangle, ListTodo, Flame } from 'lucide-reac
 import { getTaskStats } from '../utils/taskUtils';
 
 function DashboardSummary({ tasks }) {
-  const stats = getTaskStats(tasks);
-  const highPriority = tasks.filter((t) => t.priority === 'High' && !t.completed).length;
+  const safeTasks = tasks || [];
+  const stats = getTaskStats(safeTasks);
+  const highPriority = safeTasks.filter((t) => t.priority === 'High' && !t.completed).length;
 
   return (
     <div className="dashboard-summary">
