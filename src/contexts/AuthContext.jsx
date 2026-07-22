@@ -14,7 +14,7 @@ import {
   setPersistence,
 } from 'firebase/auth';
 import { auth } from '../firebase';
-import { getUserProfile, createUserProfile } from '../services/onboardingService';
+import { getUserProfile, createUserProfile, updateOnboardingStep } from '../services/onboardingService';
 
 const AuthContext = createContext(null);
 
@@ -26,6 +26,8 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState(false);
+  // Tracks whether we've confirmed the user is existing (has data)
+  const [isExistingUser, setIsExistingUser] = useState(false);
 
   function signup(email, password) {
     return createUserWithEmailAndPassword(auth, email, password);
@@ -86,26 +88,60 @@ export function AuthProvider({ children }) {
       setUserProfile(null);
       setProfileLoading(false);
       setProfileError(false);
+      setIsExistingUser(false);
       return;
     }
 
     let cancelled = false;
+    let timeoutId = null;
 
     async function loadProfile() {
       setProfileLoading(true);
       setProfileError(false);
+
+      // Timeout guard: don't let profile loading hang more than 3 seconds
+      timeoutId = setTimeout(() => {
+        if (!cancelled) {
+          console.warn('Profile loading timed out');
+          setProfileLoading(false);
+          setProfileError(true);
+        }
+      }, 3000);
+
       try {
         let profile = await getUserProfile(currentUser.uid);
-        if (!profile) {
-          // First-time user — create profile
+        let existingUser = false;
+
+        if (profile) {
+          // Profile record exists in the database — this user has signed up before.
+          // Always skip onboarding regardless of onboardingCompleted flag.
+          existingUser = true;
+
+          // Ensure onboardingCompleted is marked true in Firestore for consistency
+          if (!profile.onboardingCompleted) {
+            updateOnboardingStep(currentUser.uid, {
+              onboardingCompleted: true,
+              onboardingStep: 6,
+            }).catch(() => {});
+          }
+        } else {
+          // No profile at all — this is a brand new user signing in for the first time.
+          // Create their profile with onboardingCompleted: false so onboarding is shown.
           profile = await createUserProfile(currentUser.uid, {
             email: currentUser.email,
             displayName: currentUser.displayName || '',
             photoURL: currentUser.photoURL || null,
           });
+          existingUser = false;
         }
+
         if (!cancelled) {
           setUserProfile(profile);
+          setIsExistingUser(existingUser);
+          // If existing user, also set localStorage flag for instant subsequent loads
+          if (existingUser) {
+            localStorage.setItem(`onboarding_done_${currentUser.uid}`, 'true');
+          }
         }
       } catch (error) {
         console.error('Error loading user profile:', error);
@@ -115,6 +151,7 @@ export function AuthProvider({ children }) {
           setProfileError(true);
         }
       } finally {
+        if (timeoutId) clearTimeout(timeoutId);
         if (!cancelled) {
           setProfileLoading(false);
         }
@@ -122,7 +159,10 @@ export function AuthProvider({ children }) {
     }
 
     loadProfile();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [currentUser]);
 
   useEffect(() => {
@@ -139,11 +179,19 @@ export function AuthProvider({ children }) {
         setUserProfile(null);
         setProfileLoading(false);
         setProfileError(false);
+        setIsExistingUser(false);
       }
       setLoading(false);
     });
     return unsubscribe;
   }, []);
+
+  // Determine if onboarding should be considered complete
+  // True if: profile says so, OR localStorage flag is set, OR we detected existing tasks
+  const onboardingCompleted =
+    userProfile?.onboardingCompleted === true ||
+    isExistingUser ||
+    localStorage.getItem(`onboarding_done_${currentUser?.uid}`) === 'true';
 
   const value = {
     currentUser,
@@ -151,7 +199,7 @@ export function AuthProvider({ children }) {
     loading,
     profileLoading,
     profileError,
-    onboardingCompleted: userProfile?.onboardingCompleted === true || localStorage.getItem(`onboarding_done_${currentUser?.uid}`) === 'true',
+    onboardingCompleted,
     signup,
     login,
     loginWithGoogle,
