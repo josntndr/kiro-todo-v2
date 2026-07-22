@@ -99,6 +99,11 @@ export function AuthProvider({ children }) {
       setProfileLoading(true);
       setProfileError(false);
 
+      // Quick synchronous check: if localStorage already says onboarding is done, mark existing
+      if (localStorage.getItem(`onboarding_done_${currentUser.uid}`) === 'true') {
+        setIsExistingUser(true);
+      }
+
       // Timeout guard: don't let profile loading hang more than 3 seconds
       timeoutId = setTimeout(() => {
         if (!cancelled) {
@@ -113,8 +118,8 @@ export function AuthProvider({ children }) {
         let existingUser = false;
 
         if (profile) {
-          // Profile record exists in the database — this user has signed up before.
-          // Always skip onboarding regardless of onboardingCompleted flag.
+          // Profile record exists in the database — this user already has an account.
+          // They should NEVER see onboarding again.
           existingUser = true;
 
           // Ensure onboardingCompleted is marked true in Firestore for consistency
@@ -126,7 +131,7 @@ export function AuthProvider({ children }) {
           }
         } else {
           // No profile at all — this is a brand new user signing in for the first time.
-          // Create their profile with onboardingCompleted: false so onboarding is shown.
+          // Create their profile and show onboarding.
           profile = await createUserProfile(currentUser.uid, {
             email: currentUser.email,
             displayName: currentUser.displayName || '',
@@ -138,7 +143,6 @@ export function AuthProvider({ children }) {
         if (!cancelled) {
           setUserProfile(profile);
           setIsExistingUser(existingUser);
-          // If existing user, also set localStorage flag for instant subsequent loads
           if (existingUser) {
             localStorage.setItem(`onboarding_done_${currentUser.uid}`, 'true');
           }
@@ -146,7 +150,6 @@ export function AuthProvider({ children }) {
       } catch (error) {
         console.error('Error loading user profile:', error);
         if (!cancelled) {
-          // If Firestore fails, set a minimal profile so the app doesn't get stuck
           setUserProfile(null);
           setProfileError(true);
         }
